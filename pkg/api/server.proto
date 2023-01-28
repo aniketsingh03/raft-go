@@ -1,0 +1,29 @@
+syntax="proto3";
+package api;
+
+option go_package = "github.com/golang-projects/master_slave";
+
+service Master {
+  rpc ReceiveHelloPingFromClient (HelloPingRequest) returns (HelloPingResponse) {}
+  rpc GetSlavePprof (SlavePprofRequest) returns (SlavePprofResponse) {}
+}
+
+message SlavePprofRequest {
+  string slave_UUID = 1;
+  string slave_name = 2;
+}
+
+message SlavePprofResponse {
+  bytes pprof_response = 1;
+}
+
+message HelloPingRequest {
+  string message = 1;
+  uint32 slave_port = 2;
+  string slave_UUID = 3;
+  string slave_name = 4;
+}
+
+message HelloPingResponse {
+  string message = 1;
+}
