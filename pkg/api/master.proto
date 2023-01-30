@@ -3,8 +3,8 @@ package api;
 
 option go_package = "github.com/golang-projects/master_slave";
 
-service Master {
-  rpc ReceiveHelloPingFromClient (HelloPingRequest) returns (HelloPingResponse) {}
+service Discovery {
+  rpc RegisterSlave (RegisterSlaveRequest) returns (RegisterSlaveResponse) {}
   rpc GetSlavePprof (SlavePprofRequest) returns (SlavePprofResponse) {}
 }
 
@@ -17,13 +17,13 @@ message SlavePprofResponse {
   bytes pprof_response = 1;
 }
 
-message HelloPingRequest {
+message RegisterSlaveRequest {
   string message = 1;
   uint32 slave_port = 2;
   string slave_UUID = 3;
   string slave_name = 4;
 }
 
-message HelloPingResponse {
+message RegisterSlaveResponse {
   string message = 1;
 }

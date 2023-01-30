@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"fmt"
 	pb "github.com/golang-projects/master_slave/pkg/api"
 	"google.golang.org/grpc"
 	"log"
@@ -14,8 +15,9 @@ type SlaveInfo struct {
 }
 
 type MasterServer struct {
-	pb.MasterServer
-	slaveInfo map[string]*SlaveInfo
+	pb.DiscoveryServer
+	grpcServer *grpc.Server
+	slaveInfo  map[string]*SlaveInfo
 }
 
 // hostname:port combination where master should listen
@@ -30,26 +32,38 @@ func NewMasterServer() *MasterServer {
 	}
 }
 
-func (s *MasterServer) Start(opts *MasterOpts) {
+func (s *MasterServer) Start(opts *MasterOpts, stop chan struct{}) error {
 	listener, err := net.Listen("tcp", opts.GRPCAddr)
 	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
+		return fmt.Errorf("failed to listen: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
-	pb.RegisterMasterServer(grpcServer, s)
+	s.grpcServer = grpc.NewServer()
+	pb.RegisterDiscoveryServer(s.grpcServer, s)
 	log.Printf("GRPC server listening on %v", listener.Addr())
-	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatalf("Failed to serve: %v", err)
+	if err := s.grpcServer.Serve(listener); err != nil {
+		return fmt.Errorf("failed to serve: %v", err)
 	}
+
+	s.waitForShutdown(stop)
+	return nil
 }
 
-// ReceiveHelloPingFromClient is called when a slave starts up and sends pings to master for its discovery
-func (s *MasterServer) ReceiveHelloPingFromClient(ctx context.Context, req *pb.HelloPingRequest) (*pb.HelloPingResponse, error) {
+func (s *MasterServer) waitForShutdown(stop chan struct{}) {
+	go func() {
+		<-stop
+		if s.grpcServer != nil {
+			s.grpcServer.Stop()
+		}
+	}()
+}
+
+// RegisterSlave is called when a slave starts up and sends pings to master for registering itself
+func (s *MasterServer) RegisterSlave(ctx context.Context, req *pb.RegisterSlaveRequest) (*pb.RegisterSlaveResponse, error) {
 	log.Printf("received message %v from slave %v", req.Message, req.SlaveName)
 	s.slaveInfo[req.SlaveName] = &SlaveInfo{
 		port:      req.SlavePort,
 		slaveUUID: req.Slave_UUID,
 	}
-	return &pb.HelloPingResponse{Message: "Done!"}, nil
+	return &pb.RegisterSlaveResponse{Message: fmt.Sprintf("Registered slave %v!", req.Slave_UUID)}, nil
 }

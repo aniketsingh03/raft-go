@@ -1,26 +1,27 @@
-package main
+package cmd
 
 import (
 	"github.com/spf13/cobra"
+	"log"
+	"os"
 )
 
-func getRootCmd() *cobra.Command {
-	// rootCmd represents the base command when called without any subcommands
-	rootCmd := &cobra.Command{
-		Use:   "master_slave",
-		Short: "A brief description of your application",
-		Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
+// rootCmd represents the base command when called without any subcommands
+var rootCmd = &cobra.Command{
+	Use:   "bootstrap",
+	Short: "Start a master-slave architecture",
+	Long:  `Start a master-slave architecture with a registration server at master's end`,
+	// Uncomment the following line if your bare application
+	// has an action associated with it:
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Print("starting master and slave servers...")
+	},
+}
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-		// Uncomment the following line if your bare application
-		// has an action associated with it:
-		Run: func(cmd *cobra.Command, args []string) {
-
-		},
+func Execute() {
+	err := rootCmd.Execute()
+	if err != nil {
+		log.Printf("Failed to execute cobra command, error: %v", err)
+		os.Exit(1)
 	}
-	rootCmd.AddCommand(masterCmd, slaveCmd)
-	return rootCmd
 }
