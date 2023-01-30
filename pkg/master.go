@@ -10,8 +10,8 @@ import (
 )
 
 type SlaveInfo struct {
-	port      uint32
-	slaveUUID string
+	slaveHTTPServerHost string
+	slaveName           string
 }
 
 type MasterServer struct {
@@ -23,7 +23,7 @@ type MasterServer struct {
 // hostname:port combination where master should listen
 type MasterOpts struct {
 	// listening address for gRPC servers of both master and slave
-	GRPCAddr string
+	GRPCAddr string `json:"grpc_addr"`
 }
 
 func NewMasterServer() *MasterServer {
@@ -62,8 +62,8 @@ func (s *MasterServer) waitForShutdown(stop chan struct{}) {
 func (s *MasterServer) RegisterSlave(ctx context.Context, req *pb.RegisterSlaveRequest) (*pb.RegisterSlaveResponse, error) {
 	log.Printf("received message %v from slave %v", req.Message, req.SlaveName)
 	s.slaveInfo[req.SlaveName] = &SlaveInfo{
-		port:      req.SlavePort,
-		slaveUUID: req.Slave_UUID,
+		slaveHTTPServerHost: req.SlaveHttpServerHost,
+		slaveName:           req.SlaveName,
 	}
-	return &pb.RegisterSlaveResponse{Message: fmt.Sprintf("Registered slave %v!", req.Slave_UUID)}, nil
+	return &pb.RegisterSlaveResponse{Message: fmt.Sprintf("Registered slave %v!", req.SlaveName)}, nil
 }

@@ -19,9 +19,8 @@ message SlavePprofResponse {
 
 message RegisterSlaveRequest {
   string message = 1;
-  uint32 slave_port = 2;
-  string slave_UUID = 3;
-  string slave_name = 4;
+  string slave_http_server_host = 2;
+  string slave_name = 3;
 }
 
 message RegisterSlaveResponse {

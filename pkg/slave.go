@@ -26,8 +26,10 @@ type Slave struct {
 }
 
 type SlaveOpts struct {
-	MasterHost      string
-	PprofServerHost string
+	MasterHost      string `json:"master"`
+	PprofServerHost string `json:"pprof"`
+	Name            string `json:"name"`
+	MessageToMaster string `json:"message"`
 }
 
 func NewSlave(opts *SlaveOpts) (*Slave, error) {
@@ -40,12 +42,11 @@ func NewSlave(opts *SlaveOpts) (*Slave, error) {
 	if err := s.initSlaveDiscovery(opts); err != nil {
 		return nil, err
 	}
-	log.Printf("both pprof server and slave discovery init")
 	return s, nil
 }
 
-func (s *Slave) Start(stop chan struct{}) error {
-	log.Printf("starting slave http servers...")
+func (s *Slave) Start(stop chan struct{}, opts *SlaveOpts) error {
+	log.Printf("Received start request for slave %v", opts.Name)
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -63,16 +64,15 @@ func (s *Slave) Start(stop chan struct{}) error {
 		defer cancel()
 		if s.slaveDiscoveryClient != nil {
 			req := &pb.RegisterSlaveRequest{
-				Message:    "Hello, new slave started!",
-				SlavePort:  8080,
-				Slave_UUID: "slave-0",
-				SlaveName:  "hercules",
+				Message:             opts.MessageToMaster,
+				SlaveHttpServerHost: opts.PprofServerHost,
+				SlaveName:           opts.Name,
 			}
 			resp, err := s.slaveDiscoveryClient.RegisterSlave(ctx, req)
 			if err != nil {
 				log.Fatalf("Failed to register slave with master")
 			}
-			log.Printf("Response after registering slave %v: %v", "hercules", resp)
+			log.Printf("Response after registering slave %v: %v", opts.Name, resp)
 		}
 	}()
 	s.waitForShutdown(stop)

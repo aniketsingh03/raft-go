@@ -1,36 +1,58 @@
 package cmd
 
 import (
+	"fmt"
+	"github.com/ghodss/yaml"
 	bootstrap "github.com/golang-projects/master_slave/pkg"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"io/ioutil"
 	"log"
 	"strings"
+	"sync"
 )
 
 const (
-	MasterHost = "master-host"
-	PprofHost  = "pprof-host"
+	NumberOfSlaves = "num"
 )
 
 // slaveCmd represents the slave command
 var (
-	slaveOpts *bootstrap.SlaveOpts
-	slaveCmd  = &cobra.Command{
-		Use:   "slave",
-		Short: "Start slave http servers",
-		Long: `Slave will startup and send a registration request to the master. Slave will also start an http
-server which exposes pprof endpoints for the master to fetch that data from slave`,
+	slaveCmd = &cobra.Command{
+		Use:   "slaves",
+		Short: "Start 1 or more slaves",
+		Long: `This command will start [num] number of slaves and expose pprof endpoints for stats, 
+and once they have started up, will send registration requests to the master for registering each one of them
+master host:port, pprof host:port, slave configs (name, host:port) will be picked up from respective ymls, eg:
+slave-0.yml and slave-1.yml`,
 		Run: func(cmd *cobra.Command, args []string) {
-			s, err := bootstrap.NewSlave(slaveOpts)
-			done := make(chan struct{})
-			if err != nil {
-				log.Fatalf("failed to get new slave: %v", err)
+			fmt.Printf("number: %v", viper.GetInt(NumberOfSlaves))
+			var wg sync.WaitGroup
+			for i := 0; i < viper.GetInt(NumberOfSlaves); i++ {
+				wg.Add(1)
+				slaveOpts := &bootstrap.SlaveOpts{}
+				slaveConfigYAMLPath := fmt.Sprintf("cmd/configs/slave-%v.yaml", i)
+				yamlFileBytes, err := ioutil.ReadFile(slaveConfigYAMLPath)
+				if err != nil {
+					log.Fatalf("Failed to read file: %v, err: %v", slaveConfigYAMLPath, err)
+				}
+				if err := yaml.Unmarshal(yamlFileBytes, slaveOpts); err != nil {
+					log.Fatalf("Failed to unmarshal %v, err: %v", slaveConfigYAMLPath, err)
+				}
+				s, err := bootstrap.NewSlave(slaveOpts)
+				done := make(chan struct{})
+				if err != nil {
+					log.Fatalf("failed to get new slave: %v", err)
+				}
+				go func(opts *bootstrap.SlaveOpts) {
+					defer wg.Done()
+					if err := s.Start(done, opts); err != nil {
+						close(done)
+						log.Fatalf("failed to bootstrap slave: %v", err)
+					}
+				}(slaveOpts)
 			}
-			if err := s.Start(done); err != nil {
-				close(done)
-				log.Fatalf("failed to bootstrap slave: %v", err)
-			}
+			wg.Wait()
 		},
 	}
 )
@@ -38,16 +60,9 @@ server which exposes pprof endpoints for the master to fetch that data from slav
 func init() {
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-	slaveCmd.Flags().String(MasterHost, "localhost:9080", "master grpc server host:port")
-	if err := viper.BindPFlag(MasterHost, slaveCmd.Flags().Lookup(MasterHost)); err != nil {
+	slaveCmd.Flags().String(NumberOfSlaves, "1", "number of slaves to start")
+	if err := viper.BindPFlag(NumberOfSlaves, slaveCmd.Flags().Lookup(NumberOfSlaves)); err != nil {
 		log.Fatalf("viper bind flag error: %v", err)
 	}
-	slaveCmd.Flags().String(PprofHost, "localhost:8080", "master grpc server host:port")
-	if err := viper.BindPFlag(PprofHost, slaveCmd.Flags().Lookup(PprofHost)); err != nil {
-		log.Fatalf("viper bind flag error: %v", err)
-	}
-	slaveOpts = &bootstrap.SlaveOpts{}
-	slaveOpts.MasterHost = viper.GetString(MasterHost)
-	slaveOpts.PprofServerHost = viper.GetString(PprofHost)
 	rootCmd.AddCommand(slaveCmd)
 }
