@@ -39,9 +39,12 @@ type RaftServer struct {
 	HTTPMux      *http.ServeMux
 	HTTPListener net.Listener
 
-	selfVotes         uint32
-	termTimeout       time.Duration
-	heartbeatDuration time.Duration
+	selfVotes     uint32
+	electionTick  time.Duration
+	heartbeatTick time.Duration
+
+	electionRPCTimeout  time.Duration
+	heartbeatRPCTimeout time.Duration
 
 	otherServerHostnames                   OtherServerHostnames
 	currentTerm                            uint32
@@ -80,8 +83,10 @@ func NewRaftServer(opts *ServerOpts) (*RaftServer, error) {
 		termToVotedCandidateMap:                map[uint32]uint32{},
 		otherServerHostnames:                   []string{},
 		grpcDiscoveryClients:                   []pb.DiscoveryClient{},
-		termTimeout:                            generateRandomTimeout(),
-		heartbeatDuration:                      5 * time.Millisecond,
+		electionTick:                           generateRandomTimeout(),
+		heartbeatTick:                          5 * time.Millisecond,
+		electionRPCTimeout:                     5 * time.Millisecond,
+		heartbeatRPCTimeout:                    time.Millisecond,
 		somebodyElseBecameLeaderForCurrentTerm: make(chan uint32),
 		currentNodeBecameLeader:                make(chan struct{}),
 	}
@@ -173,7 +178,7 @@ func (s *RaftServer) initHeartbeatsIfMaster() {
 		s.sendHeartbeat()
 		for {
 			select {
-			case <-time.After(s.heartbeatDuration):
+			case <-time.After(s.heartbeatTick):
 				log.Printf("Sending heartbeats to all servers from leader %v", s.Name)
 				s.sendHeartbeat()
 			case <-s.somebodyElseBecameLeaderForCurrentTerm:
@@ -185,13 +190,12 @@ func (s *RaftServer) initHeartbeatsIfMaster() {
 
 func (s *RaftServer) sendHeartbeat() {
 	var wg sync.WaitGroup
-	appendRPCTimeout := 100 * time.Millisecond
 	for _, client := range s.grpcDiscoveryClients {
 		wg.Add(1)
 		go func(client pb.DiscoveryClient) {
 			defer wg.Done()
 			log.Printf("Calling AppendEntry RPC for all hosts from %v, which is now the LEADER", s.Name)
-			ctx, cancel := context.WithTimeout(context.Background(), appendRPCTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), s.heartbeatRPCTimeout)
 			defer cancel()
 			req := &pb.AppendEntriesRequest{
 				Term:              s.currentTerm,
@@ -215,13 +219,13 @@ func (s *RaftServer) sendHeartbeat() {
 
 func (s *RaftServer) SetTimeoutAndStartVoteRequest() {
 	select {
-	case <-time.After(s.termTimeout):
+	case <-time.After(s.electionTick):
 		s.mu.Lock()
 		// If somebody has already been chosen as a leader, then there is no need to start election
 		if s.currentLeaderCandidateId != 0 {
 			return
 		}
-		s.termTimeout = generateRandomTimeout()
+		s.electionTick = generateRandomTimeout()
 		s.mu.Unlock()
 
 		go s.SetTimeoutAndStartVoteRequest()
@@ -239,7 +243,7 @@ func (s *RaftServer) SetTimeoutAndStartVoteRequest() {
 			go func(client pb.DiscoveryClient) {
 				defer wg.Done()
 				log.Printf("Sending request vote request to all hosts from %v", s.Name)
-				ctx, cancel := context.WithTimeout(context.Background(), s.termTimeout)
+				ctx, cancel := context.WithTimeout(context.Background(), s.electionRPCTimeout)
 				defer cancel()
 				req := &pb.RequestVoteRequest{
 					Term:        s.currentTerm,
@@ -285,8 +289,9 @@ func (s *RaftServer) RequestVote(ctx context.Context, in *pb.RequestVoteRequest)
 		VoteGranted: false,
 	}
 
-	if _, ok := s.termToVotedCandidateMap[in.Term]; ok {
-		// If vote for this term has already been cast to some other node, then ignore
+	if val, ok := s.termToVotedCandidateMap[in.Term]; ok || val == in.CandidateId {
+		// If vote for this term has already been cast to some other node or the same node which sent the request
+		// then ignore
 		return resp, nil
 	} else {
 		if in.Term >= s.currentTerm {
@@ -311,17 +316,20 @@ func (s *RaftServer) AppendEntries(ctx context.Context, in *pb.AppendEntriesRequ
 		Success:      true,
 	}
 
-	// If a leader has already been elected for the current node, then simply return success = true. Case when
+	// If leader's term < current node's term, reject the leader's request to become leader. This case happens when
+	// current node missed some heartbeat from the leader and hence started the election process after promoting itself
+	// to CANDIDATE state.
+	if in.Term < s.currentTerm {
+		resp.Success = false
+		return resp, nil
+	}
+
+	// If a leader has already been elected for the current term, then simply return success = true. This case happens when
 	// leader is sending repeated heartbeats after it became leader.
 	if s.currentLeaderCandidateId != 0 {
 		return resp, nil
 	}
 
-	// If leader's term < current node's term, reject the leader's request to become leader
-	if in.Term < s.currentTerm {
-		resp.Success = false
-		return resp, nil
-	}
 	// Else accept the leader, inform the somebodyElseBecameLeaderForCurrentTerm channel,
 	// which sets currentLeaderCandidateId to the leader's candidateId and moves the current node
 	// back to follower state.
