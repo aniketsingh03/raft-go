@@ -1,0 +1,4 @@
+grpc_addr: "localhost:9082"
+pprof_server_host: "localhost:8082"
+name: "beta"
+candidate_id: 2

@@ -1,0 +1,4 @@
+grpc_addr: "localhost:9081"
+pprof_server_host: "localhost:8081"
+name: "alpha"
+candidate_id: 1

@@ -1,4 +1,0 @@
-master: "localhost:9080"
-pprof: "localhost:8081"
-name: "beta"
-message: "Register slave-1"

@@ -1,0 +1,4 @@
+grpc_addr: "localhost:9084"
+pprof_server_host: "localhost:8084"
+name: "delta"
+candidate_id: 4

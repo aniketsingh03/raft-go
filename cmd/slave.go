@@ -8,61 +8,80 @@ import (
 	"github.com/spf13/viper"
 	"io/ioutil"
 	"log"
+	"os"
+	"os/signal"
 	"strings"
-	"sync"
+	"syscall"
+	"time"
 )
 
 const (
-	NumberOfSlaves = "num"
+	NumberOfServers = "num"
 )
 
-// slaveCmd represents the slave command
+// serverCmd represents the slave command
 var (
-	slaveCmd = &cobra.Command{
-		Use:   "slaves",
-		Short: "Start 1 or more slaves",
-		Long: `This command will start [num] number of slaves and expose pprof endpoints for stats, 
-and once they have started up, will send registration requests to the master for registering each one of them
-master host:port, pprof host:port, slave configs (name, host:port) will be picked up from respective ymls, eg:
-slave-0.yml and slave-1.yml`,
+	serverCmd = &cobra.Command{
+		Use:   "servers",
+		Short: "Start 1 or more servers",
+		Long:  `This command will start [num] number of servers and expose pprof endpoints for stats`,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("number: %v", viper.GetInt(NumberOfSlaves))
-			var wg sync.WaitGroup
-			for i := 0; i < viper.GetInt(NumberOfSlaves); i++ {
-				wg.Add(1)
-				slaveOpts := &bootstrap.SlaveOpts{}
-				slaveConfigYAMLPath := fmt.Sprintf("cmd/configs/slave-%v.yaml", i)
-				yamlFileBytes, err := ioutil.ReadFile(slaveConfigYAMLPath)
+			fmt.Printf("number: %v", viper.GetInt(NumberOfServers))
+			slaveServers := make([]*bootstrap.RaftServer, 0)
+			var d chan struct{}
+			for i := 1; i <= viper.GetInt(NumberOfServers); i++ {
+				serverOpts := &bootstrap.ServerOpts{}
+				serverConfigYAMLPath := fmt.Sprintf("cmd/configs/server-%v.yaml", i)
+				yamlFileBytes, err := ioutil.ReadFile(serverConfigYAMLPath)
 				if err != nil {
-					log.Fatalf("Failed to read file: %v, err: %v", slaveConfigYAMLPath, err)
+					log.Fatalf("Failed to read file: %v, err: %v", serverConfigYAMLPath, err)
 				}
-				if err := yaml.Unmarshal(yamlFileBytes, slaveOpts); err != nil {
-					log.Fatalf("Failed to unmarshal %v, err: %v", slaveConfigYAMLPath, err)
+				if err := yaml.Unmarshal(yamlFileBytes, serverOpts); err != nil {
+					log.Fatalf("Failed to unmarshal %v, err: %v", serverConfigYAMLPath, err)
 				}
-				s, err := bootstrap.NewSlave(slaveOpts)
+				s, err := bootstrap.NewRaftServer(serverOpts)
+				slaveServers = append(slaveServers, s)
 				done := make(chan struct{})
+				d = done
 				if err != nil {
 					log.Fatalf("failed to get new slave: %v", err)
 				}
-				go func(opts *bootstrap.SlaveOpts) {
-					defer wg.Done()
+				go func(opts *bootstrap.ServerOpts) {
 					if err := s.Start(done, opts); err != nil {
 						close(done)
 						log.Fatalf("failed to bootstrap slave: %v", err)
 					}
-				}(slaveOpts)
+				}(serverOpts)
 			}
-			wg.Wait()
+			// wait for all grpc and http servers in all servers to come up, and then call RequestVote RPC
+			time.Sleep(2 * time.Second)
+
+			log.Print("started all http and grpc servers.....")
+			log.Printf("size: %v", len(slaveServers))
+			for _, s := range slaveServers {
+				log.Printf("AT COBRA, SLAVE SERVER %v", s.Name)
+				go func(s *bootstrap.RaftServer) {
+					s.SetTimeoutAndStartVoteRequest()
+				}(s)
+			}
+			waitSignal(d)
 		},
 	}
 )
 
+func waitSignal(stop chan struct{}) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	<-sigs
+	close(stop)
+}
+
 func init() {
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-	slaveCmd.Flags().String(NumberOfSlaves, "1", "number of slaves to start")
-	if err := viper.BindPFlag(NumberOfSlaves, slaveCmd.Flags().Lookup(NumberOfSlaves)); err != nil {
+	serverCmd.Flags().String(NumberOfServers, "5", "number of slaves to start")
+	if err := viper.BindPFlag(NumberOfServers, serverCmd.Flags().Lookup(NumberOfServers)); err != nil {
 		log.Fatalf("viper bind flag error: %v", err)
 	}
-	rootCmd.AddCommand(slaveCmd)
+	rootCmd.AddCommand(serverCmd)
 }
