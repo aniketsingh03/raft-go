@@ -43,9 +43,10 @@ type RaftServer struct {
 	electionTick  time.Duration
 	heartbeatTick time.Duration
 
-	electionRPCTimeout  time.Duration
-	heartbeatRPCTimeout time.Duration
-
+	electionRPCTimeout                     time.Duration
+	heartbeatRPCTimeout                    time.Duration
+	firstAppendRPCFromLeader               bool
+	appendRPCReceivedBeforeTimingOut       chan struct{}
 	otherServerHostnames                   OtherServerHostnames
 	currentTerm                            uint32
 	currentState                           state
@@ -82,6 +83,8 @@ func NewRaftServer(opts *ServerOpts) (*RaftServer, error) {
 		HTTPMux:                                http.NewServeMux(),
 		termToVotedCandidateMap:                map[uint32]uint32{},
 		otherServerHostnames:                   []string{},
+		firstAppendRPCFromLeader:               true,
+		appendRPCReceivedBeforeTimingOut:       make(chan struct{}),
 		grpcDiscoveryClients:                   []pb.DiscoveryClient{},
 		electionTick:                           generateRandomTimeout(),
 		heartbeatTick:                          5 * time.Millisecond,
@@ -174,15 +177,19 @@ func (s *RaftServer) initPprofServer(opts *ServerOpts) error {
 
 func (s *RaftServer) initHeartbeatsIfMaster() {
 	go func() {
-		<-s.currentNodeBecameLeader
-		s.sendHeartbeat()
 		for {
-			select {
-			case <-time.After(s.heartbeatTick):
-				log.Printf("Sending heartbeats to all servers from leader %v", s.Name)
-				s.sendHeartbeat()
-			case <-s.somebodyElseBecameLeaderForCurrentTerm:
-				break
+			<-s.currentNodeBecameLeader
+			s.firstAppendRPCFromLeader = true
+			s.sendHeartbeat()
+		heartbeatLabel:
+			for {
+				select {
+				case <-time.After(s.heartbeatTick):
+					log.Printf("Sending heartbeats to all servers from leader %v", s.Name)
+					s.sendHeartbeat()
+				case <-s.somebodyElseBecameLeaderForCurrentTerm:
+					break heartbeatLabel
+				}
 			}
 		}
 	}()
@@ -215,6 +222,19 @@ func (s *RaftServer) sendHeartbeat() {
 		}(client)
 	}
 	wg.Wait()
+}
+
+func (s *RaftServer) resetElectionTimeoutAndWait() {
+	// Called whenever a follower receives an AppendRPC request from the master.
+	s.electionTick = generateRandomTimeout()
+	select {
+	case <-time.After(s.electionTick):
+		s.electionTick = 0
+		s.currentLeaderCandidateId = 0
+		go s.SetTimeoutAndStartVoteRequest()
+	case <-s.appendRPCReceivedBeforeTimingOut:
+		return
+	}
 }
 
 func (s *RaftServer) SetTimeoutAndStartVoteRequest() {
@@ -277,6 +297,7 @@ func (s *RaftServer) SetTimeoutAndStartVoteRequest() {
 		defer s.mu.Unlock()
 		s.currentLeaderCandidateId = leaderCandidateId
 		s.currentState = FOLLOWER
+		s.firstAppendRPCFromLeader = true
 		return
 	}
 }
@@ -308,6 +329,13 @@ func (s *RaftServer) RequestVote(ctx context.Context, in *pb.RequestVoteRequest)
 func (s *RaftServer) AppendEntries(ctx context.Context, in *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if !s.firstAppendRPCFromLeader {
+		s.appendRPCReceivedBeforeTimingOut <- struct{}{}
+	} else {
+		s.firstAppendRPCFromLeader = false
+	}
+	s.resetElectionTimeoutAndWait()
 
 	resp := &pb.AppendEntriesResponse{
 		Term:         s.currentTerm,
