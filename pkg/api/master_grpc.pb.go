@@ -22,8 +22,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DiscoveryClient interface {
-	RegisterSlave(ctx context.Context, in *RegisterSlaveRequest, opts ...grpc.CallOption) (*RegisterSlaveResponse, error)
-	GetSlavePprof(ctx context.Context, in *SlavePprofRequest, opts ...grpc.CallOption) (*SlavePprofResponse, error)
+	RequestVote(ctx context.Context, in *RequestVoteRequest, opts ...grpc.CallOption) (*RequestVoteResponse, error)
+	AppendEntries(ctx context.Context, in *AppendEntriesRequest, opts ...grpc.CallOption) (*AppendEntriesResponse, error)
 }
 
 type discoveryClient struct {
@@ -34,18 +34,18 @@ func NewDiscoveryClient(cc grpc.ClientConnInterface) DiscoveryClient {
 	return &discoveryClient{cc}
 }
 
-func (c *discoveryClient) RegisterSlave(ctx context.Context, in *RegisterSlaveRequest, opts ...grpc.CallOption) (*RegisterSlaveResponse, error) {
-	out := new(RegisterSlaveResponse)
-	err := c.cc.Invoke(ctx, "/api.Discovery/RegisterSlave", in, out, opts...)
+func (c *discoveryClient) RequestVote(ctx context.Context, in *RequestVoteRequest, opts ...grpc.CallOption) (*RequestVoteResponse, error) {
+	out := new(RequestVoteResponse)
+	err := c.cc.Invoke(ctx, "/api.Discovery/RequestVote", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *discoveryClient) GetSlavePprof(ctx context.Context, in *SlavePprofRequest, opts ...grpc.CallOption) (*SlavePprofResponse, error) {
-	out := new(SlavePprofResponse)
-	err := c.cc.Invoke(ctx, "/api.Discovery/GetSlavePprof", in, out, opts...)
+func (c *discoveryClient) AppendEntries(ctx context.Context, in *AppendEntriesRequest, opts ...grpc.CallOption) (*AppendEntriesResponse, error) {
+	out := new(AppendEntriesResponse)
+	err := c.cc.Invoke(ctx, "/api.Discovery/AppendEntries", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +56,8 @@ func (c *discoveryClient) GetSlavePprof(ctx context.Context, in *SlavePprofReque
 // All implementations must embed UnimplementedDiscoveryServer
 // for forward compatibility
 type DiscoveryServer interface {
-	RegisterSlave(context.Context, *RegisterSlaveRequest) (*RegisterSlaveResponse, error)
-	GetSlavePprof(context.Context, *SlavePprofRequest) (*SlavePprofResponse, error)
+	RequestVote(context.Context, *RequestVoteRequest) (*RequestVoteResponse, error)
+	AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error)
 	mustEmbedUnimplementedDiscoveryServer()
 }
 
@@ -65,11 +65,11 @@ type DiscoveryServer interface {
 type UnimplementedDiscoveryServer struct {
 }
 
-func (UnimplementedDiscoveryServer) RegisterSlave(context.Context, *RegisterSlaveRequest) (*RegisterSlaveResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RegisterSlave not implemented")
+func (UnimplementedDiscoveryServer) RequestVote(context.Context, *RequestVoteRequest) (*RequestVoteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestVote not implemented")
 }
-func (UnimplementedDiscoveryServer) GetSlavePprof(context.Context, *SlavePprofRequest) (*SlavePprofResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetSlavePprof not implemented")
+func (UnimplementedDiscoveryServer) AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AppendEntries not implemented")
 }
 func (UnimplementedDiscoveryServer) mustEmbedUnimplementedDiscoveryServer() {}
 
@@ -84,38 +84,38 @@ func RegisterDiscoveryServer(s grpc.ServiceRegistrar, srv DiscoveryServer) {
 	s.RegisterService(&Discovery_ServiceDesc, srv)
 }
 
-func _Discovery_RegisterSlave_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RegisterSlaveRequest)
+func _Discovery_RequestVote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestVoteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DiscoveryServer).RegisterSlave(ctx, in)
+		return srv.(DiscoveryServer).RequestVote(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/api.Discovery/RegisterSlave",
+		FullMethod: "/api.Discovery/RequestVote",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DiscoveryServer).RegisterSlave(ctx, req.(*RegisterSlaveRequest))
+		return srv.(DiscoveryServer).RequestVote(ctx, req.(*RequestVoteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Discovery_GetSlavePprof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SlavePprofRequest)
+func _Discovery_AppendEntries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendEntriesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DiscoveryServer).GetSlavePprof(ctx, in)
+		return srv.(DiscoveryServer).AppendEntries(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/api.Discovery/GetSlavePprof",
+		FullMethod: "/api.Discovery/AppendEntries",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DiscoveryServer).GetSlavePprof(ctx, req.(*SlavePprofRequest))
+		return srv.(DiscoveryServer).AppendEntries(ctx, req.(*AppendEntriesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -128,12 +128,12 @@ var Discovery_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*DiscoveryServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "RegisterSlave",
-			Handler:    _Discovery_RegisterSlave_Handler,
+			MethodName: "RequestVote",
+			Handler:    _Discovery_RequestVote_Handler,
 		},
 		{
-			MethodName: "GetSlavePprof",
-			Handler:    _Discovery_GetSlavePprof_Handler,
+			MethodName: "AppendEntries",
+			Handler:    _Discovery_AppendEntries_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

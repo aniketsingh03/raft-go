@@ -4,25 +4,33 @@ package api;
 option go_package = "github.com/golang-projects/master_slave";
 
 service Discovery {
-  rpc RegisterSlave (RegisterSlaveRequest) returns (RegisterSlaveResponse) {}
-  rpc GetSlavePprof (SlavePprofRequest) returns (SlavePprofResponse) {}
+  rpc RequestVote (RequestVoteRequest) returns (RequestVoteResponse) {}
+  rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesResponse) {}
 }
 
-message SlavePprofRequest {
-  string slave_UUID = 1;
-  string slave_name = 2;
+message RequestVoteRequest {
+  uint32 term = 1;
+  uint32 candidateId = 2;
 }
 
-message SlavePprofResponse {
-  bytes pprof_response = 1;
+message RequestVoteResponse {
+  uint32 currentTerm = 1;
+  bool voteGranted = 2;
 }
 
-message RegisterSlaveRequest {
-  string message = 1;
-  string slave_http_server_host = 2;
-  string slave_name = 3;
+message AppendEntriesRequest {
+  uint32 term = 1;
+  uint32 leaderCandidateId = 2;
+  repeated LogEntriesToAppend entries = 3;
 }
 
-message RegisterSlaveResponse {
+message AppendEntriesResponse {
+  uint32 term = 1;
+  bool success = 2;
+  string name = 3;
+  uint32 currentState = 4;
+}
+
+message LogEntriesToAppend {
   string message = 1;
 }

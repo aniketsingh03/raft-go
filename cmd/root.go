@@ -9,12 +9,13 @@ import (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "bootstrap",
-	Short: "Start a master-slave architecture",
-	Long:  `Start a master-slave architecture with a registration server at master's end`,
+	Short: "A leader follower architectural pattern",
+	Long: `Start a leader-follower pattern where leader election, log replication and compaction happens on the basis
+			of raft consensus`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Print("starting master and slave servers...")
+		log.Print("starting servers...")
 	},
 }
 
